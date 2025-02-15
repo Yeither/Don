@@ -1,0 +1,597 @@
+#include <string>
+#include <pcl/io/pcd_io.h>
+#include <pcl/search/kdtree.h>
+#include <pcl/features/normal_3d_omp.h>
+#include <pcl/filters/conditional_removal.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/features/don.h>
+#include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/filters/extract_indices.h>
+#include <mutex>
+#include <iostream>
+#include <thread>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/common/transforms.h>
+#include <pcl/common/common.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <vector>
+#include <pcl/common/concatenate.h>
+#include <chrono>
+#include <sensor_msgs/PointCloud2.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include "vtkSmartPointer.h"
+#include "vtkPlaneSource.h"
+#include <vtkTransform.h>
+#include <vtkTransformFilter.h>
+#include <vtkPolyData.h>
+
+using namespace pcl;
+using namespace std;
+pcl::PointCloud<pcl::PointXYZ> cloud;
+int plane_count=0;
+pcl::PCDWriter writer;
+std::vector<std::vector<double>> line_parameter; // 直线参数
+
+pcl::visualization::PCLVisualizer viewer("Point Cloud Viewer");
+
+
+double get_scale(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud,int i){
+    
+    // 假设点云数据已经填充到 cloud 中
+
+    pcl::PointXYZRGB minPt, maxPt;
+    pcl::getMinMax3D(*cloud, minPt, maxPt);
+
+    double scale[3]={abs(minPt.x-maxPt.x),abs(minPt.y-maxPt.y),abs(minPt.z-maxPt.z)};
+    return scale[i];
+}
+
+bool isPlanePerpendicularToGround(const pcl::ModelCoefficients::Ptr& coefficients,float threshold)
+{
+    // Ground normal vector
+    Eigen::Vector3f groundNormal(0, 1, 0);
+
+    // Plane normal vector
+    Eigen::Vector3f planeNormal(coefficients->values[0], coefficients->values[1], coefficients->values[2]);
+
+    // Compute the cosine of the angle between the two vectors
+    float cosAngle = groundNormal.dot(planeNormal) / (groundNormal.norm() * planeNormal.norm());
+
+    // Convert the cosine value to degrees
+    float angle = std::acos(cosAngle) * 180.0 / M_PI;
+
+    // Define a threshold angle (e.g., 10 degrees) for determining perpendicularity
+
+
+    // Check if the angle is close to 90 degrees (within the threshold)
+    return (std::abs(angle - 90.0) < threshold);
+}
+
+void seePlane(const pcl::PointCloud<pcl::PointXYZRGB>& plane, const pcl::ModelCoefficients::Ptr& coefficients)
+{
+    // 以下是 seePlane 函数的实现
+    // 初始化变量
+    double scale[3] ;
+    std::shared_ptr<pcl::PointCloud<pcl::PointXYZRGB>> plane_ = std::make_shared<pcl::PointCloud<pcl::PointXYZRGB>>(plane);
+    for(int i=0;i<3;i++)scale[i] = get_scale(plane_,i);
+    cout<<"sizeof plane:  "<<plane.size()<<" scale: "<<scale<<endl;
+    Eigen::Vector4f centroid;
+
+    // 计算平面质心
+    pcl::compute3DCentroid(plane, centroid);
+
+    // 创建平面对象
+    vtkSmartPointer<vtkPlaneSource> planeSource = vtkSmartPointer<vtkPlaneSource>::New();
+    double norm_sqr = 1.0 / (coefficients->values[0] * coefficients->values[0] +
+                             coefficients->values[1] * coefficients->values[1] +
+                             coefficients->values[2] * coefficients->values[2]);
+    // 设置平面法向量
+    planeSource->SetNormal(coefficients->values[0], coefficients->values[1], coefficients->values[2]);
+//cout<<"1 "<<coefficients->values[0]<<"2 "<<coefficients->values[1]<<"3 "<<coefficients->values[2]<<endl;
+    double x = centroid(0);
+    double y = centroid(1);
+    double z = centroid(2);
+    // 调整平面中心
+    double t = x * coefficients->values[0] + y * coefficients->values[1] + z * coefficients->values[2] + coefficients->values[3];
+    x -= coefficients->values[0] * t * norm_sqr;
+    y -= coefficients->values[1] * t * norm_sqr;
+    z -= coefficients->values[2] * t * norm_sqr;
+cout<<"xyz: "<<x<<" "<<y<<" "<<z<<endl;
+    planeSource->SetCenter(x, y, z);
+{
+        double pt1[3], pt2[3], orig[3],center[3];
+        planeSource->GetPoint1(pt1);
+        planeSource->GetPoint2(pt2);
+        planeSource->GetOrigin(orig);
+        planeSource->GetCenter(center);
+
+        double u[3], v[3];
+        double _pt1[3], _pt2[3], _po[3];
+        for(int i = 0; i < 3; i++) {
+            u[i] = (orig[i] - pt1[i]) / 2.0;
+            v[i] = (orig[i] - pt2[i]) / 2.0;
+            pt1[i] = center[i] - scale[1] * u[i] + scale[1] * v[i];
+            pt2[i] = center[i] + scale[1] * u[i] - scale[1] * v[i];
+            orig[i] = center[i] + scale[1] * u[i] + scale[1] * v[i];
+        }
+        
+        planeSource->SetOrigin(orig);
+        planeSource->SetPoint1(pt1);
+        planeSource->SetPoint2(pt2);
+}
+
+    //planeSource->Update();    
+    vtkSmartPointer<vtkTransform> transform = vtkSmartPointer<vtkTransform>::New();
+    transform->RotateWXYZ(30, coefficients->values[0], coefficients->values[1], coefficients->values[2]);
+        vtkSmartPointer<vtkTransformFilter> transformFilter = vtkSmartPointer<vtkTransformFilter>::New();
+    // transformFilter->SetInputData(plane_->GetOutput());
+    transformFilter->SetInputConnection(planeSource->GetOutputPort());
+    transformFilter->SetTransform(transform);
+    transformFilter->Update();
+
+    viewer.addModelFromPolyData(transformFilter->GetPolyDataOutput(), ("plane" + std::to_string(plane_count)));
+    //viewer.addModelFromPolyData(planeSource->GetOutput(), ("plane"+std::to_string(plane_count)));
+    
+}
+
+// 计算两个平面之间的距离
+double calculatePlaneDistance(const pcl::ModelCoefficients::Ptr& plane1, const pcl::ModelCoefficients::Ptr& plane2) {
+    // 提取平面1的法向量和原点到平面的距离
+    double nx1 = plane1->values[0];
+    double ny1 = plane1->values[1];
+    double nz1 = plane1->values[2];
+    double d1 = std::fabs(plane1->values[3]);
+
+    // 提取平面2的法向量和原点到平面的距离
+    double nx2 = plane2->values[0];
+    double ny2 = plane2->values[1];
+    double nz2 = plane2->values[2];
+    double d2 = std::fabs(plane2->values[3]);
+
+    // 计算两个平面之间的距离
+    double distance = std::fabs((d2 - d1) / std::sqrt(nx1 * nx1 + ny1 * ny1 + nz1 * nz1 + nx2 * nx2 + ny2 * ny2 + nz2 * nz2));
+
+    return distance;
+}
+
+void seePlanes(const std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr>& coloredClusters, const std::vector<pcl::ModelCoefficients::Ptr>& planeCoefficients)
+{
+    for (size_t i = 0; i < planeCoefficients.size(); ++i)
+    {
+        cout<<i<<"value0 "<<planeCoefficients[i]->values[0]<<" "<<"value1 "<<planeCoefficients[i]->values[1]<<"value2 "<<planeCoefficients[i]->values[2]<<"value3 "<<planeCoefficients[i]->values[3]<<endl;
+        // 使用之前的 seePlane 函数可视化平面
+        if(abs(planeCoefficients[i]->values[3])<0.01)continue;
+        seePlane(*coloredClusters[i], planeCoefficients[i]);
+        plane_count++;
+    }
+  
+}
+
+bool areParallel(const pcl::ModelCoefficients::Ptr& plane1, const pcl::ModelCoefficients::Ptr& plane2)
+{
+    
+    // 获取平面1的法向量
+    double nx1 = plane1->values[0];
+    double ny1 = plane1->values[1];
+    double nz1 = plane1->values[2];
+
+    // 获取平面2的法向量
+    double nx2 = plane2->values[0];
+    double ny2 = plane2->values[1];
+    double nz2 = plane2->values[2];
+
+    // 判断法向量是否平行
+    double dotProduct = nx1 * nx2 + ny1 * ny2 + nz1 * nz2;
+    double magnitude1 = std::sqrt(nx1 * nx1 + ny1 * ny1 + nz1 * nz1);
+    double magnitude2 = std::sqrt(nx2 * nx2 + ny2 * ny2 + nz2 * nz2);
+    double cosAngle = dotProduct / (magnitude1 * magnitude2);
+
+    // 如果法向量之间的夹角接近于0度或180度，则认为平面平行
+    const double threshold = 0.8; // 可根据需要调整阈值
+    bool judge = ((std::fabs(cosAngle) >= threshold)&&(calculatePlaneDistance(plane1,plane2)<1))||((std::fabs(cosAngle) >= threshold)&&(isPlanePerpendicularToGround(plane1,10)));
+    return judge;
+}
+
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr convertPointCloud(const pcl::PointCloud<pcl::PointXYZ>::Ptr& result){
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr newResult(new pcl::PointCloud<pcl::PointXYZRGB>);
+    newResult->width = result->width;
+    newResult->height = result->height;
+    newResult->is_dense = result->is_dense;
+    newResult->points.resize(result->points.size());
+
+    for (size_t i = 0; i < result->points.size(); ++i)
+    {
+        pcl::PointXYZRGB point;
+        point.x = result->points[i].x;
+        point.y = result->points[i].y;
+        point.z = result->points[i].z;
+        point.r = 0;  // 设置RGB颜色为黑色，您可以根据需要修改颜色
+        point.g = 0;
+        point.b = 0;
+        newResult->points[i] = point;
+    }
+
+    return newResult;
+}
+
+// 定义函数执行 NormalEstimationOMP 的设置
+void setNormalEstimationOMP(pcl::NormalEstimationOMP<pcl::PointXYZRGB, pcl::PointNormal> ne,double scale1, pcl::PointCloud<pcl::PointNormal>::Ptr normals_small_scale)
+{
+    ne.setNumberOfThreads(16);
+    ne.setRadiusSearch(scale1);
+    ne.compute(*normals_small_scale);
+}
+
+
+
+int main(int argc, char *argv[])
+{
+	int VISUAL = 0, SAVE = 1;//0 indicate shows nothing, 1 indicate shows very step output 2 only shows the final results                                     
+							 ///The smallest scale to use in the DoN filter.
+	double scale1 = 5, mean_radius;
+
+	///The largest scale to use in the DoN filter.
+	double scale2 = 50;
+
+	///The minimum DoN magnitude to threshold by
+	double threshold = 0.01;
+
+	///segment scene into clusters with given distance tolerance using euclidean clustering
+	double segradius = 10;
+
+	ros::init(argc,argv,"ransac");
+
+	ros::NodeHandle nh;
+
+	pcl::PointCloud<PointXYZRGB>::Ptr cloud_(new pcl::PointCloud<PointXYZRGB>);
+	pcl::io::loadPCDFile("/home/yang/下载/guangchang1.pcd", *cloud_);
+    //pcl::io::loadPCDFile("/home/yang/下载/test01.pcd", *cloud_);
+    // 获取开始时间点
+    auto start = std::chrono::high_resolution_clock::now();
+    // 创建VoxelGrid滤波器对象
+    pcl::VoxelGrid<pcl::PointXYZRGB> voxel_grid;
+    // 设置体素尺寸
+    double leaf_size = 0.02;//0.02; // 体素尺寸
+    voxel_grid.setLeafSize(leaf_size, leaf_size, leaf_size);
+    // 设置输入点云
+    voxel_grid.setInputCloud(cloud_);
+    // 执行体素抽取滤波
+
+    voxel_grid.filter(*cloud_);
+
+	pcl::search::Search<PointXYZRGB>::Ptr tree;
+	if (cloud_->isOrganized())
+	{
+		tree.reset(new pcl::search::OrganizedNeighbor<PointXYZRGB>());
+	}
+	else
+	{
+		tree.reset(new pcl::search::KdTree<PointXYZRGB>(false));
+	}
+
+	// Set the input pointcloud for the search tree
+	tree->setInputCloud(cloud_);
+	//caculate the mean radius of cloud and mutilply with corresponding input
+	{
+		int size_cloud = cloud_->size();
+		int step = size_cloud / 10;
+		double total_distance = 0;
+		int i, j = 1;
+		for (i = 0; i < size_cloud; i += step, j++)
+		{
+			std::vector<int> pointIdxNKNSearch(2);
+			std::vector<float> pointNKNSquaredDistance(2);
+			tree->nearestKSearch(cloud_->points[i], 2, pointIdxNKNSearch, pointNKNSquaredDistance);
+			total_distance += pointNKNSquaredDistance[1] + pointNKNSquaredDistance[0];
+		}
+		mean_radius = sqrt((total_distance / j));
+		cout << "mean radius of cloud is： " << mean_radius << endl;
+		scale1 *= mean_radius;//5*mean_radius
+		scale2 *= mean_radius;//10*mean_radius
+		segradius *= mean_radius;
+	}
+
+
+	if (scale1 >= scale2)
+	{
+		cerr << "Error: Large scale must be > small scale!" << endl;
+		exit(EXIT_FAILURE);
+	}
+
+	// Compute normals using both small and large scales at each point
+	pcl::NormalEstimationOMP<PointXYZRGB, PointNormal> ne;
+	ne.setInputCloud(cloud_);
+	ne.setSearchMethod(tree);
+
+	/**
+	* NOTE: setting viewpoint is very important, so that we can ensure
+	* normals are all pointed in the same direction!
+	*/
+	ne.setViewPoint(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+        // 获取开始时间点
+    auto start1 = std::chrono::high_resolution_clock::now();
+	// calculate normals with the small scale
+	cout << "Calculating normals for scale1..." << scale1 << endl;
+	cout << "Calculating normals for scale2..." << scale2 << endl;
+	pcl::PointCloud<PointNormal>::Ptr normals_small_scale(new pcl::PointCloud<PointNormal>);
+    pcl::PointCloud<PointNormal>::Ptr normals_large_scale(new pcl::PointCloud<PointNormal>);
+    std::thread t(setNormalEstimationOMP,ne, scale1, normals_small_scale);
+    std::thread t1(setNormalEstimationOMP,ne, scale2, normals_large_scale);
+	// calculate normals with the large scale
+    t.join();
+    t1.join();
+
+
+	//visualize the normals
+	    auto start2 = std::chrono::high_resolution_clock::now();
+        auto duration1 = std::chrono::duration_cast<std::chrono::microseconds>(start2 - start1);
+    std::cout << "Time taken by function: " << ((double)duration1.count()/1000000)<< " seconds" << std::endl;
+	// Create output cloud for DoN results
+	PointCloud<PointNormal>::Ptr doncloud(new pcl::PointCloud<PointNormal>);
+	copyPointCloud<PointXYZRGB, PointNormal>(*cloud_, *doncloud);
+
+	cout << "Calculating DoN... " << endl;
+	// Create DoN operator
+	pcl::DifferenceOfNormalsEstimation<PointXYZRGB, PointNormal, PointNormal> don;
+	don.setInputCloud(cloud_);
+    
+	don.setNormalScaleLarge(normals_large_scale);
+	don.setNormalScaleSmall(normals_small_scale);
+
+	if (!don.initCompute())
+	{
+		std::cerr << "Error: Could not intialize DoN feature operator" << std::endl;
+		exit(EXIT_FAILURE);
+	}
+
+	// Compute DoN
+	don.computeFeature(*doncloud);//对输入点集，计算每一个点的DON特征向量，并输出
+
+	//输出一些不同的曲率
+	{
+		cout << "You may have some sense about the input threshold（curvature） next time for your data" << endl;
+		int size_cloud = doncloud->size();
+		int step = size_cloud / 10;
+		for (int i = 0; i < size_cloud; i += step)cout << " " << doncloud->points[i].curvature << " " << endl;
+
+	}
+
+	//show the differences of curvature with both large and small scale 
+
+
+
+	// 按大小滤波
+	cout << "Filtering out DoN mag <= " << threshold << "..." << endl;
+bool fil=false;
+if(fil){
+	// 创建条件滤波函数
+	pcl::ConditionOr<PointNormal>::Ptr range_cond(
+		new pcl::ConditionOr<PointNormal>()
+	);
+	range_cond->addComparison(pcl::FieldComparison<PointNormal>::ConstPtr(
+		new pcl::FieldComparison<PointNormal>("curvature", pcl::ComparisonOps::GT, threshold))
+	);//添加比较条件
+	// Build the filter 
+	pcl::ConditionalRemoval<PointNormal> condrem;
+	condrem.setCondition(range_cond);
+	condrem.setInputCloud(doncloud);
+
+	pcl::PointCloud<PointNormal>::Ptr doncloud_filtered(new pcl::PointCloud<PointNormal>);
+
+	// Apply filter
+	condrem.filter(*doncloud_filtered);
+
+	doncloud = doncloud_filtered;
+
+	// Save filtered output
+	std::cout << "Filtered Pointcloud: " << doncloud->points.size() << " data points." << std::endl;
+
+}
+
+	//show the results of keeping relative small curvature points 
+
+	// Filter by magnitude
+	cout << "Clustering using EuclideanClusterExtraction with tolerance <= " << segradius << "..." << endl;
+	pcl::search::KdTree<PointNormal>::Ptr segtree(new pcl::search::KdTree<PointNormal>);
+	segtree->setInputCloud(doncloud);
+
+	std::vector<pcl::PointIndices> cluster_indices;
+	pcl::EuclideanClusterExtraction<PointNormal> ec;
+
+	ec.setClusterTolerance(segradius);
+	ec.setMinClusterSize(50);
+	ec.setMaxClusterSize(1000000);
+	ec.setSearchMethod(segtree);
+	ec.setInputCloud(doncloud);
+	ec.extract(cluster_indices);
+	std::cout<<"size of cluster_indices: "<<cluster_indices.size()<<std::endl;
+    int MAX;
+	if (SAVE == 1)
+	{
+		int j = 0;
+		for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it, j++)
+		{
+			pcl::PointCloud<PointNormal>::Ptr cloud_cluster_don_save(new pcl::PointCloud<PointNormal>);
+			for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+			{
+				cloud_cluster_don_save->points.push_back(doncloud->points[*pit]);
+			}
+
+			cloud_cluster_don_save->width = int(cloud_cluster_don_save->points.size());
+			cloud_cluster_don_save->height = 1;
+			cloud_cluster_don_save->is_dense = true;
+
+			//Save cluster
+			cout << "PointCloud representing the Cluster: " << cloud_cluster_don_save->points.size() << " data points." << std::endl;
+			stringstream ss;
+			ss << "don_cluster_" << j << ".pcd";
+			writer.write<pcl::PointNormal>(ss.str(), *cloud_cluster_don_save, false);
+		}
+MAX=j;
+	}
+
+ std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds_;
+   auto begin1 = std::chrono::high_resolution_clock::now();
+   double cost =0;
+    // 遍历所有的PCD文件
+    for (int i = 0; i < MAX; ++i) {
+        // 创建一个新的PointCloud对象
+        pcl::PointCloud<pcl::PointXYZ>::Ptr cloud11(new pcl::PointCloud<pcl::PointXYZ>);
+
+        // 构造文件名
+        std::string filename = "don_cluster_" + std::to_string(i) + ".pcd";
+
+        // 加载PCD文件到PointCloud对象中
+        if (pcl::io::loadPCDFile<pcl::PointXYZ>(filename, *cloud11) == -1) {
+            PCL_ERROR("Couldn't read file %s\n", filename.c_str());
+            return (-1);
+        }
+
+        // 将PointCloud对象添加到向量中
+        clouds_.push_back(cloud11);
+    }
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster_don(new pcl::PointCloud<pcl::PointXYZ>);
+for (int it = 0; it < MAX; ++it)
+{
+
+        for (const auto& point : clouds_[it]->points) {
+    cloud_cluster_don->points.push_back(point);
+}
+    auto stop1 = std::chrono::high_resolution_clock::now();
+    auto during1=std::chrono::duration_cast<std::chrono::microseconds>(stop1 - begin1);
+    cost+=(double)during1.count();
+    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne1;
+    ne1.setInputCloud(cloud_cluster_don);
+    pcl::PointCloud<pcl::Normal>::Ptr cloud_normals(new pcl::PointCloud<pcl::Normal>);
+    ne1.setRadiusSearch(0.3);
+    // 计算特征
+    ne1.compute(*cloud_normals);
+    // 获取结束时间点
+    auto stop = std::chrono::high_resolution_clock::now();
+
+    // 计算时间差
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+
+    std::cout << "Time taken by function: " << ((double)duration.count()/1000000) << " seconds" << std::endl;
+
+}
+
+//pcl::PointCloud<pcl::PointXYZ>::Ptr result(new pcl::PointCloud<pcl::PointXYZ>);
+
+//CloudSubtraction(cloud_cluster_don,cloud_,result);
+std::cout<<"cloud_cluster_don= "<<cloud_cluster_don->size()<<std::endl<<"cloud_= "<<cloud_->size()<<std::endl;
+
+// 显示结果点云
+
+
+//viewer(newResult);
+pcl::PointCloud<pcl::PointXYZRGB>::Ptr coloredCluster;
+std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> coloredClusters;
+std::vector<pcl::PointCloud<pcl::PointXYZRGB>::Ptr> coloredClusters2;
+std::vector<pcl::ModelCoefficients::Ptr> planeCoefficients; // 添加存储平面系数的向量
+pcl::PointXYZRGB planeCentroid;
+int count=0;
+for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cluster(new pcl::PointCloud<pcl::PointXYZ>);
+    for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+    {
+        pcl::PointXYZ point;
+        point.x = doncloud->points[*pit].x;
+        point.y = doncloud->points[*pit].y;
+        point.z = doncloud->points[*pit].z;
+        cluster->points.push_back(point);
+    }
+
+    // 使用RANSAC进行平面拟合
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setDistanceThreshold(0.01);
+    seg.setInputCloud(cluster);
+    seg.segment(*inliers, *coefficients);
+ // 计算聚类点云质心
+    pcl::PointXYZRGB clusterCentroid;
+
+    pcl::computeCentroid(*clouds_[count], clusterCentroid);
+
+    // 平移点云使平面中心与点云质心对齐
+    // 添加彩色聚类点云到 coloredClusters
+    coloredClusters.push_back(convertPointCloud(clouds_[count]));
+    // 将拟合的平面参数存储在数据结构中
+
+    planeCoefficients.push_back(coefficients);
+    count++;
+}
+
+std::vector<pcl::ModelCoefficients::Ptr> filteredPlaneCoefficients;
+std::vector<int> is;
+for (size_t i = 0; i < planeCoefficients.size(); ++i)
+{
+    bool isParallel = false;
+
+    // 检查当前平面与之前的平面是否平行
+    for (size_t j = 0; j < filteredPlaneCoefficients.size(); ++j)
+    {
+        
+        // 比较法向量的方向来判断平面是否平行
+        if (areParallel(planeCoefficients[i], filteredPlaneCoefficients[j]))
+        {
+            isParallel = true;
+            break;
+        }
+    }
+
+    // 如果没有与当前平面平行的平面，则将其保留
+    if (!isParallel)
+    {
+        filteredPlaneCoefficients.push_back(planeCoefficients[i]);
+        is.push_back(i);
+    }
+}
+
+// 在聚类操作后，为每个聚类设置不同的颜色
+for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+{
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr coloredCluster(new pcl::PointCloud<pcl::PointXYZRGB>);
+    // 为聚类生成随机颜色
+    uint8_t r = rand() % 256;
+    uint8_t g = rand() % 256;
+    uint8_t b = rand() % 256;
+    for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+    {
+        pcl::PointXYZRGB point;
+        point.x = doncloud->points[*pit].x;
+        point.y = doncloud->points[*pit].y;
+        point.z = doncloud->points[*pit].z;
+        point.r = r;
+        point.g = g;
+        point.b = b;
+        coloredCluster->points.push_back(point);
+    }
+    coloredClusters.push_back(coloredCluster);
+}
+
+// 可视化不同颜色的点云
+
+viewer.setBackgroundColor(0.0, 0.0, 0.0);
+int clusterIndex = 0;
+
+for (const auto& coloredCluster : coloredClusters)
+{
+    pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> colorHandler(coloredCluster);
+    viewer.addPointCloud<pcl::PointXYZRGB>(coloredCluster, colorHandler, "cluster" + std::to_string(clusterIndex));
+    clusterIndex++;//viewer.spin();
+    
+}
+for(auto it:is){
+coloredClusters2.push_back(coloredClusters[it]);
+}
+seePlanes(coloredClusters2, filteredPlaneCoefficients);
+viewer.spin();
+
+}

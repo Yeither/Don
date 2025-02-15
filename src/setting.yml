@@ -1,0 +1,12 @@
+%YAML:1.0
+---
+DON:
+  SAVE: false
+  Get_Nomal: false
+  VoxelGrid_filter: false
+  scale1: 0.1
+  scale2: 1.7
+  segradius: 0.05
+  leaf_size: 0.2
+  address: "/home/yang/下载/21.pcd"
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"

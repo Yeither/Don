@@ -1,0 +1,157 @@
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                #是否储存点云
+  Get_Nomal: false                                           #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: false                                    #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 0.02
+  scale2: 0.2
+  segradius: 0.02                                           #分割半径的缩放因子
+  leaf_size: 0.2                                            #滤波体素
+  address: "/home/yang/下载/112.pcd"                         #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"  #储存点云的地址
+
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                 #是否储存点云
+  Get_Nomal: false                                            #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: true                                      #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 0.08
+  scale2: 0.8
+  segradius: 0.01                                             #分割半径的缩放因子
+  leaf_size: 0.2                                              #滤波体素
+  address: "/home/yang/下载/112.pcd"                           #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"    #储存点云的地址
+
+
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: false                                      #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 5
+  scale2: 35
+  segradius: 10                                                #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/111.pcd"                            #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: true                                       #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 4
+  scale2: 35
+  segradius: 1                                                 #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/111.pcd"                            #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+  %YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: false                                      #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 5
+  scale2: 35
+  segradius: 10                                                #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/cloud-2.pcd"                        #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: true                                       #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 2
+  scale2: 17
+  segradius: 3                                                 #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/cloud-2.pcd"                        #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+  %YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: true                                       #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 0.06
+  scale2: 0.6
+  segradius: 0.1                                               #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/guangchang1.pcd"                   #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+  %YAML:1.0
+---
+DON:
+  SAVE: true                                                  #是否储存点云
+  Get_Nomal: false                                            #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: false                                     #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 5
+  scale2: 50
+  segradius: 10                                              #分割半径的缩放因子
+  leaf_size: 0.6                                             #滤波体素
+  address: "/home/yang/下载/guangchang1.pcd"                  #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"   #储存点云的地址
+
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: true                                       #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 2
+  scale2: 55
+  segradius: 1.2                                               #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/21.pcd"                             #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+%YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: false                                      #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 0.1
+  scale2: 1.7
+  segradius: 0.05                                              #分割半径的缩放因子
+  leaf_size: 0.2                                               #滤波体素
+  address: "/home/yang/下载/21.pcd"                             #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+
+  %YAML:1.0
+---
+DON:
+  SAVE: false                                                  #是否储存点云
+  Get_Nomal: false                                             #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: true                                       #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 2.5
+  scale2: 25
+  segradius: 0.5                                               #分割半径的缩放因子
+  leaf_size: 0.1                                               #滤波体素
+  address: "/home/yang/下载/test01.pcd"                         #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"     #储存点云的地址
+
+  %YAML:1.0
+---
+DON:
+  SAVE: true                                                  #是否储存点云
+  Get_Nomal: false                                            #是否计算每一个点的法向量，别的聚类要用，有点耗时，先禁了
+  VoxelGrid_filter: false                                     #false为在don前滤波，true为在don后ransac前滤波
+  scale1: 25
+  scale2: 250
+  segradius: 4                                                #分割半径的缩放因子
+  leaf_size: 0.1                                              #滤波体素
+  address: "/home/yang/下载/test01.pcd"                       #点云地址
+  save_address: "/home/yang/fk/src/redodon/src/pointcloud"    #储存点云的地址
